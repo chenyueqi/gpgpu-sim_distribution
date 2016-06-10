@@ -126,6 +126,44 @@ public:
         m_done_exit=false;
     }
 
+    /*TODO*/
+    void cawa_init()
+    {
+	m_warp_cawa_inst_num = 0;
+	m_warp_cawa_cpi = 0;
+	last_inst_complete_cycle = 0;
+	nstall = 0;
+    }
+
+    /* TODO */
+    void update_nstall(unsigned long long cycle) {
+	nstall += cycle - last_inst_complete_cycle; 
+	last_inst_complete_cycle = cycle;
+    }
+
+    /* TODO */
+    void update_cpi();
+
+    /* TODO */
+    float get_cpi() {
+	return m_warp_cawa_cpi;
+    }
+
+    /* TODO */
+    unsigned long long get_nstall() {
+	return nstall;
+    }
+
+    /* TODO */
+    void update_nInst(unsigned n) {
+	m_warp_cawa_nInst = n;
+    }
+
+    /* TODO */
+    unsigned get_nInst() {
+	return m_warp_cawa_nInst;
+    }
+
     bool functional_done() const;
     bool waiting(); // not const due to membar
     bool hardware_done() const;
@@ -235,6 +273,13 @@ private:
     unsigned m_warp_size;
     unsigned m_dynamic_warp_id;
 
+    /*TODO*/
+    unsigned m_warp_cawa_inst_num;
+    float m_warp_cawa_cpi;
+    unsigned long long nstall;
+    unsigned long long last_inst_complete_cycle;
+    unsigned m_warp_cawa_nInst;
+
     address_type m_next_pc;
     unsigned n_completed;          // number of threads in warp completed
     std::bitset<MAX_WARP_SIZE> m_active_threads;
@@ -295,6 +340,8 @@ enum concrete_scheduler
     CONCRETE_SCHEDULER_GTO,
     CONCRETE_SCHEDULER_TWO_LEVEL_ACTIVE,
     CONCRETE_SCHEDULER_WARP_LIMITING,
+    /*TODO*/
+    CONCRETE_SCHEDULER_GCAWS,
     NUM_CONCRETE_SCHEDULERS
 };
 
@@ -316,6 +363,14 @@ public:
     }
     virtual void done_adding_supervised_warps() {
         m_last_supervised_issued = m_supervised_warps.end();
+    }
+
+    /* TODO */
+    void simt_nInst2warp() {
+	for(std::vector<shd_warp_t>::iterator iter = m_warp->begin(); iter < m_warp->end() ; iter++)
+	{
+	    iter->update_nInst(m_simt_stack[iter->get_warp_id()]->get_nInst());
+	}
     }
 
 
@@ -350,10 +405,12 @@ public:
                             OrderingType age_ordering,
                             bool (*priority_func)(U lhs, U rhs) );
     static bool sort_warps_by_oldest_dynamic_id(shd_warp_t* lhs, shd_warp_t* rhs);
+    static bool sort_warps_by_nCriticality(shd_warp_t *lhs, shd_warp_t *rhs);
 
     // Derived classes can override this function to populate
     // m_supervised_warps with their scheduling policies
     virtual void order_warps() = 0;
+
 
 protected:
     virtual void do_on_warp_issued( unsigned warp_id,
@@ -419,7 +476,6 @@ public:
     virtual void done_adding_supervised_warps() {
         m_last_supervised_issued = m_supervised_warps.begin();
     }
-
 };
 
 
@@ -494,7 +550,23 @@ protected:
     unsigned m_num_warps_to_limit;
 };
 
-
+/*TODO*/
+class gCAWS_scheduler : public scheduler_unit {
+public:
+	gCAWS_scheduler ( shader_core_stats* stats, shader_core_ctx* shader,
+                    Scoreboard* scoreboard, simt_stack** simt,
+                    std::vector<shd_warp_t>* warp,
+                    register_set* sp_out,
+                    register_set* sfu_out,
+                    register_set* mem_out,
+                    int id )
+	: scheduler_unit ( stats, shader, scoreboard, simt, warp, sp_out, sfu_out, mem_out, id ){}
+	virtual ~gCAWS_scheduler () {}
+	virtual void order_warps ();
+	virtual void done_adding_supervised_warps() {
+        m_last_supervised_issued = m_supervised_warps.end();
+    }
+};
 
 class opndcoll_rfu_t { // operand collector based register file unit
 public:

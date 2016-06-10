@@ -582,6 +582,7 @@ simt_stack::simt_stack( unsigned wid, unsigned warpSize)
 {
     m_warp_id=wid;
     m_warp_size = warpSize;
+    m_warp_cawa_nInst = 0;
     reset();
 }
 
@@ -769,6 +770,8 @@ void simt_stack::update( simt_mask_t &thread_done, addr_vector_t &next_pc, addre
         if (warp_diverged) {
             m_stack.back().m_calldepth = 0;
             m_stack.back().m_recvg_pc = new_recvg_pc;
+	    /*TODO*/
+	    m_warp_cawa_nInst += new_recvg_pc - tmp_next_pc;
         } else {
             m_stack.back().m_recvg_pc = top_recvg_pc;
         }

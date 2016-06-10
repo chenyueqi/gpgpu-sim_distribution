@@ -310,10 +310,17 @@ public:
     void     get_pdom_stack_top_info( unsigned *pc, unsigned *rpc ) const;
     unsigned get_rp() const;
     void     print(FILE*fp) const;
+    unsigned get_nInst() {
+	return m_warp_cawa_nInst;
+    }
 
 protected:
     unsigned m_warp_id;
     unsigned m_warp_size;
+
+    /*TODO*/
+    unsigned m_warp_cawa_nInst;
+
 
     enum stack_entry_type {
         STACK_ENTRY_TYPE_NORMAL = 0,
@@ -850,6 +857,7 @@ public:
     {
     	return m_warp_active_mask;
     }
+
     void completed( unsigned long long cycle ) const;  // stat collection: called when the instruction is completed  
 
     void set_addr( unsigned n, new_addr_type addr ) 

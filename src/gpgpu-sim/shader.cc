@@ -133,6 +133,9 @@ shader_core_ctx::shader_core_ctx( class gpgpu_sim *gpu,
                                          CONCRETE_SCHEDULER_GTO :
                                          sched_config.find("warp_limiting") != std::string::npos ?
                                          CONCRETE_SCHEDULER_WARP_LIMITING:
+					 /*TODO*/
+					 sched_config.find("gCAWS") != std::string::npos ?
+					 CONCRETE_SCHEDULER_GCAWS:
                                          NUM_CONCRETE_SCHEDULERS;
     assert ( scheduler != NUM_CONCRETE_SCHEDULERS );
     
@@ -197,6 +200,20 @@ shader_core_ctx::shader_core_ctx( class gpgpu_sim *gpu,
                                      )
                 );
                 break;
+		/*TODO*/
+	    case CONCRETE_SCHEDULER_GCAWS:
+		schedulers.push_back(
+			new gCAWS_scheduler( m_stats,
+			                     this,
+					     m_scoreboard,
+					     m_simt_stack,
+					     &m_warp,
+					     &m_pipeline_reg[ID_OC_SP],
+					     &m_pipeline_reg[ID_OC_SFU],
+					     &m_pipeline_reg[ID_OC_MEM],
+					     i
+			    		   )
+			);
             default:
                 abort();
         };
@@ -336,6 +353,8 @@ void shader_core_ctx::init_warps( unsigned cta_id, unsigned start_thread, unsign
             m_warp[i].init(start_pc,cta_id,i,active_threads, m_dynamic_warp_id);
             ++m_dynamic_warp_id;
             m_not_completed += n_active;
+	    /*TODO*/
+	    m_warp[i].cawa_init();
       }
    }
 }
@@ -610,6 +629,7 @@ void shader_core_ctx::fetch()
                         m_threadState[tid].m_active = false; 
                         unsigned cta_id = m_warp[warp_id].get_cta_id();
                         register_cta_thread_exit(cta_id);
+			/*TODO*/
                         m_not_completed -= 1;
                         m_active_threads.reset(tid);
                         assert( m_thread[tid]!= NULL );
@@ -806,6 +826,9 @@ void scheduler_unit::cycle()
     bool ready_inst = false;  // of the valid instructions, there was one not waiting for pending register writes
     bool issued_inst = false; // of these we issued one
 
+    /*TODO*/
+    // update every simt_stack information nInst to related warp before order_warps
+    
     order_warps();
     for ( std::vector< shd_warp_t* >::const_iterator iter = m_next_cycle_prioritized_warps.begin();
           iter != m_next_cycle_prioritized_warps.end();
@@ -907,7 +930,7 @@ void scheduler_unit::cycle()
         } 
     }
 
-    // issue stall statistics:
+    // issue stalget_dynamic_warp_idl statistics:
     if( !valid_inst ) 
         m_stats->shader_cycle_distro[0]++; // idle or control hazard
     else if( !ready_inst ) 
@@ -927,6 +950,25 @@ void scheduler_unit::do_on_warp_issued( unsigned warp_id,
     warp(warp_id).ibuffer_step();
 }
 
+bool scheduler_unit::sort_warps_by_nCriticality(shd_warp_t *lhs, shd_warp_t *rhs) 
+{
+     if (rhs && lhs) {
+        if ( lhs->done_exit() || lhs->waiting() ) {
+            return false;
+        } else if ( rhs->done_exit() || rhs->waiting() ) {
+            return true;
+        } else {
+	    /* TODO */
+	    unsigned long long lnC, rnC;
+	    lnC = (lhs->get_nInst()) * lhs->get_cpi() + lhs->get_nstall();
+	    rnC = (rhs->get_nInst()) * rhs->get_cpi() + rhs->get_nstall();
+	    return lnC > rnC;
+        }
+    } else {
+        return lhs < rhs;
+    }
+}
+
 bool scheduler_unit::sort_warps_by_oldest_dynamic_id(shd_warp_t* lhs, shd_warp_t* rhs)
 {
     if (rhs && lhs) {
@@ -942,12 +984,23 @@ bool scheduler_unit::sort_warps_by_oldest_dynamic_id(shd_warp_t* lhs, shd_warp_t
     }
 }
 
+
 void lrr_scheduler::order_warps()
 {
-    order_lrr( m_next_cycle_prioritized_warps,
-               m_supervised_warps,
+    order_lrr( m_next_cycle_prioritized_warps, m_supervised_warps,
                m_last_supervised_issued,
                m_supervised_warps.size() );
+}
+
+void gCAWS_scheduler::order_warps() 
+{
+    simt_nInst2warp();
+    order_by_priority( m_next_cycle_prioritized_warps,
+                       m_supervised_warps,
+                       m_last_supervised_issued,
+                       m_supervised_warps.size(),
+                       ORDERED_PRIORITY_FUNC_ONLY,
+                       scheduler_unit::sort_warps_by_nCriticality );
 }
 
 void gto_scheduler::order_warps()
@@ -1222,7 +1275,11 @@ void shader_core_ctx::warp_inst_complete(const warp_inst_t &inst)
 
   m_stats->m_num_sim_winsn[m_sid]++;
   m_gpu->gpu_sim_insn += inst.active_count();
+  /*TODO*/
   inst.completed(gpu_tot_sim_cycle + gpu_sim_cycle);
+  unsigned m_warp_id = inst.warp_id();
+  m_warp[m_warp_id].update_cpi();
+  m_warp[m_warp_id].update_nstall(gpu_tot_sim_cycle + gpu_sim_cycle);
 }
 
 void shader_core_ctx::writeback()
@@ -1914,6 +1971,8 @@ void ldst_unit::cycle()
 void shader_core_ctx::register_cta_thread_exit( unsigned cta_num )
 {
    assert( m_cta_status[cta_num] > 0 );
+   /*TODO TODO*/
+
    m_cta_status[cta_num]--;
    if (!m_cta_status[cta_num]) {
       m_n_active_cta--;
@@ -2833,6 +2892,11 @@ void shader_core_ctx::get_L1T_sub_stats(struct cache_sub_stats &css) const{
 void shader_core_ctx::get_icnt_power_stats(long &n_simt_to_mem, long &n_mem_to_simt) const{
 	n_simt_to_mem += m_stats->n_simt_to_mem[m_sid];
 	n_mem_to_simt += m_stats->n_mem_to_simt[m_sid];
+}
+
+void shd_warp_t::update_cpi() {
+    m_warp_cawa_inst_num ++;
+    m_warp_cawa_cpi = gpu_sim_cycle / m_warp_cawa_inst_num;
 }
 
 bool shd_warp_t::functional_done() const
