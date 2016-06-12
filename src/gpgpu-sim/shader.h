@@ -108,6 +108,7 @@ public:
         m_last_fetch=0;
         m_next=0;
         m_inst_at_barrier=NULL;
+	cawa_init();
     }
     void init( address_type start_pc,
                unsigned cta_id,
@@ -133,43 +134,70 @@ public:
 	m_warp_cawa_cpi = 0;
 	last_inst_complete_cycle = 0;
 	nstall = 0;
+	m_warp_cawa_nInst = 0;
+	nCriticality = 0;
+	cawa_identify_num = 0;
+	total_identify_num = 0;
     }
 
     /* TODO */
-    void update_nstall(unsigned long long cycle) {
-	nstall += cycle - last_inst_complete_cycle; 
+    // update & get nstall
+    void update_nstall(unsigned long long cycle) 
+    {
+	nstall += (cycle - last_inst_complete_cycle); 
 	last_inst_complete_cycle = cycle;
     }
 
-    /* TODO */
+    unsigned long long get_nstall(){return nstall;}
+
+    // update & get cpi
     void update_cpi();
 
-    /* TODO */
-    float get_cpi() {
-	return m_warp_cawa_cpi;
-    }
+    float get_cpi(){return m_warp_cawa_cpi;}
 
-    /* TODO */
-    unsigned long long get_nstall() {
-	return nstall;
-    }
-
-    /* TODO */
-    void update_nInst(unsigned n) {
+    // update & get nInst
+    void update_nInst(unsigned n)
+    {
 	m_warp_cawa_nInst = n;
+	update_nCriticality();
     }
 
-    /* TODO */
-    unsigned get_nInst() {
-	return m_warp_cawa_nInst;
+    unsigned get_nInst() {return m_warp_cawa_nInst;}
+
+    // update & get nCriticality
+    void update_nCriticality()
+    {
+	nCriticality = m_warp_cawa_nInst * m_warp_cawa_cpi + nstall;
     }
+
+    unsigned get_nCriticality(){return nCriticality;}
+
+    void update_cawa_identify()
+    {
+	cawa_identify_num++;
+    }
+
+    unsigned get_cawa_identify(){return cawa_identify_num;}
+
+    void update_cawa_identify_num()
+    {
+	total_identify_num++;
+    }
+
+    unsigned long long  get_total_identify_num(){return total_identify_num++;}
+
+    //lastwords
+    void lastwords(unsigned cta_id, unsigned warp_id);
+
+
+
 
     bool functional_done() const;
     bool waiting(); // not const due to membar
     bool hardware_done() const;
 
     bool done_exit() const { return m_done_exit; }
-    void set_done_exit() { m_done_exit=true; }
+    void set_done_exit(){m_done_exit=true;}
 
     void print( FILE *fout ) const;
     void print_ibuffer( FILE *fout ) const;
@@ -279,6 +307,9 @@ private:
     unsigned long long nstall;
     unsigned long long last_inst_complete_cycle;
     unsigned m_warp_cawa_nInst;
+    unsigned nCriticality;
+    unsigned cawa_identify_num;
+    unsigned long long total_identify_num;
 
     address_type m_next_pc;
     unsigned n_completed;          // number of threads in warp completed
@@ -366,10 +397,37 @@ public:
     }
 
     /* TODO */
-    void simt_nInst2warp() {
+    void simt_nInst2warp() 
+    {
 	for(std::vector<shd_warp_t>::iterator iter = m_warp->begin(); iter < m_warp->end() ; iter++)
 	{
-	    iter->update_nInst(m_simt_stack[iter->get_warp_id()]->get_nInst());
+	    if(iter->get_warp_id() != (unsigned)(-1))
+		iter->update_nInst(m_simt_stack[iter->get_warp_id()]->get_nInst());
+	}
+
+	for(std::vector<shd_warp_t>::iterator iter = m_warp->begin(); iter < m_warp->end(); iter++)
+	{
+	    if(iter->get_warp_id() != (unsigned)(-1))
+	    {
+		unsigned nCriticality = iter->get_nCriticality();
+		unsigned int cnt_l = 0;
+		unsigned int cnt_s = 0;
+		
+		for(std::vector<shd_warp_t>::iterator iter2 = m_warp->begin(); iter2 < m_warp->end(); iter2++)
+		{
+		    if(iter2->get_warp_id() != (unsigned)(-1))
+		    {
+			cnt_s++;
+			if(nCriticality > (iter2->get_nCriticality()+10))
+			    cnt_l++;
+		    }
+
+		}
+
+		iter->update_cawa_identify_num();
+		if(cnt_l > cnt_s/2)
+		    iter->update_cawa_identify();
+	    }
 	}
     }
 

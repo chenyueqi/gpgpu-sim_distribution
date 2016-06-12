@@ -353,8 +353,6 @@ void shader_core_ctx::init_warps( unsigned cta_id, unsigned start_thread, unsign
             m_warp[i].init(start_pc,cta_id,i,active_threads, m_dynamic_warp_id);
             ++m_dynamic_warp_id;
             m_not_completed += n_active;
-	    /*TODO*/
-	    m_warp[i].cawa_init();
       }
    }
 }
@@ -621,15 +619,17 @@ void shader_core_ctx::fetch()
             unsigned warp_id = (m_last_warp_fetched+1+i) % m_config->max_warps_per_shader;
 
             // this code checks if this warp has finished executing and can be reclaimed
-            if( m_warp[warp_id].hardware_done() && !m_scoreboard->pendingWrites(warp_id) && !m_warp[warp_id].done_exit() ) {
+            if( m_warp[warp_id].hardware_done() && !m_scoreboard->pendingWrites(warp_id) && !m_warp[warp_id].done_exit() ) 
+	    {
                 bool did_exit=false;
-                for( unsigned t=0; t<m_config->warp_size;t++) {
+                for( unsigned t=0; t<m_config->warp_size;t++) 
+		{
                     unsigned tid=warp_id*m_config->warp_size+t;
-                    if( m_threadState[tid].m_active == true ) {
+                    if( m_threadState[tid].m_active == true ) 
+		    {
                         m_threadState[tid].m_active = false; 
                         unsigned cta_id = m_warp[warp_id].get_cta_id();
                         register_cta_thread_exit(cta_id);
-			/*TODO*/
                         m_not_completed -= 1;
                         m_active_threads.reset(tid);
                         assert( m_thread[tid]!= NULL );
@@ -637,7 +637,13 @@ void shader_core_ctx::fetch()
                     }
                 }
                 if( did_exit ) 
+		{
+		    /*TODO*/
+		    unsigned cta_id = m_warp[warp_id].get_cta_id();
+		    unsigned dynamic_warp_id = m_warp[warp_id].get_dynamic_warp_id();
+		    m_warp[warp_id].lastwords(cta_id, dynamic_warp_id);
                     m_warp[warp_id].set_done_exit();
+		}
             }
 
             // this code fetches instructions from the i-cache or generates memory requests
@@ -826,9 +832,6 @@ void scheduler_unit::cycle()
     bool ready_inst = false;  // of the valid instructions, there was one not waiting for pending register writes
     bool issued_inst = false; // of these we issued one
 
-    /*TODO*/
-    // update every simt_stack information nInst to related warp before order_warps
-    
     order_warps();
     for ( std::vector< shd_warp_t* >::const_iterator iter = m_next_cycle_prioritized_warps.begin();
           iter != m_next_cycle_prioritized_warps.end();
@@ -950,6 +953,7 @@ void scheduler_unit::do_on_warp_issued( unsigned warp_id,
     warp(warp_id).ibuffer_step();
 }
 
+/* TODO */
 bool scheduler_unit::sort_warps_by_nCriticality(shd_warp_t *lhs, shd_warp_t *rhs) 
 {
      if (rhs && lhs) {
@@ -958,10 +962,10 @@ bool scheduler_unit::sort_warps_by_nCriticality(shd_warp_t *lhs, shd_warp_t *rhs
         } else if ( rhs->done_exit() || rhs->waiting() ) {
             return true;
         } else {
-	    /* TODO */
 	    unsigned long long lnC, rnC;
-	    lnC = (lhs->get_nInst()) * lhs->get_cpi() + lhs->get_nstall();
-	    rnC = (rhs->get_nInst()) * rhs->get_cpi() + rhs->get_nstall();
+
+	    lnC = lhs->get_nCriticality();
+	    rnC = rhs->get_nCriticality();
 	    return lnC > rnC;
         }
     } else {
@@ -1005,6 +1009,7 @@ void gCAWS_scheduler::order_warps()
 
 void gto_scheduler::order_warps()
 {
+    simt_nInst2warp();
     order_by_priority( m_next_cycle_prioritized_warps,
                        m_supervised_warps,
                        m_last_supervised_issued,
@@ -1037,6 +1042,7 @@ two_level_active_scheduler::do_on_warp_issued( unsigned warp_id,
 void two_level_active_scheduler::order_warps()
 {
     //Move waiting warps to m_pending_warps
+    simt_nInst2warp();
     unsigned num_demoted = 0;
     for (   std::vector< shd_warp_t* >::iterator iter = m_next_cycle_prioritized_warps.begin();
             iter != m_next_cycle_prioritized_warps.end(); ) {
@@ -1106,6 +1112,7 @@ swl_scheduler::swl_scheduler ( shader_core_stats* stats, shader_core_ctx* shader
 
 void swl_scheduler::order_warps()
 {
+    simt_nInst2warp();
     if ( SCHEDULER_PRIORITIZATION_GTO == m_prioritization ) {
         order_by_priority( m_next_cycle_prioritized_warps,
                            m_supervised_warps,
@@ -1275,11 +1282,12 @@ void shader_core_ctx::warp_inst_complete(const warp_inst_t &inst)
 
   m_stats->m_num_sim_winsn[m_sid]++;
   m_gpu->gpu_sim_insn += inst.active_count();
-  /*TODO*/
   inst.completed(gpu_tot_sim_cycle + gpu_sim_cycle);
+
+  /*TODO*/
   unsigned m_warp_id = inst.warp_id();
   m_warp[m_warp_id].update_cpi();
-  m_warp[m_warp_id].update_nstall(gpu_tot_sim_cycle + gpu_sim_cycle);
+  m_warp[m_warp_id].update_nstall(gpu_sim_cycle);
 }
 
 void shader_core_ctx::writeback()
@@ -1971,7 +1979,6 @@ void ldst_unit::cycle()
 void shader_core_ctx::register_cta_thread_exit( unsigned cta_num )
 {
    assert( m_cta_status[cta_num] > 0 );
-   /*TODO TODO*/
 
    m_cta_status[cta_num]--;
    if (!m_cta_status[cta_num]) {
@@ -1980,6 +1987,9 @@ void shader_core_ctx::register_cta_thread_exit( unsigned cta_num )
       shader_CTA_count_unlog(m_sid, 1);
       printf("GPGPU-Sim uArch: Shader %d finished CTA #%d (%lld,%lld), %u CTAs running\n", m_sid, cta_num, gpu_sim_cycle, gpu_tot_sim_cycle,
              m_n_active_cta );
+      /*TODO*/
+      /*printf the warp information of m_cta_status[cta_num]*/
+
       if( m_n_active_cta == 0 ) {
           assert( m_kernel != NULL );
           m_kernel->dec_running();
@@ -2894,9 +2904,16 @@ void shader_core_ctx::get_icnt_power_stats(long &n_simt_to_mem, long &n_mem_to_s
 	n_mem_to_simt += m_stats->n_mem_to_simt[m_sid];
 }
 
+/*TODO*/
 void shd_warp_t::update_cpi() {
     m_warp_cawa_inst_num ++;
     m_warp_cawa_cpi = gpu_sim_cycle / m_warp_cawa_inst_num;
+}
+
+/*TODO*/
+void shd_warp_t::lastwords(unsigned cta_id, unsigned warp_id)
+{
+    printf("I am a warp #%d#%d#%d nCriticality:%d cycle number:%u identify frequency: %f\n",m_shader->get_sid(), cta_id, warp_id,  nCriticality, gpu_sim_cycle, (float)cawa_identify_num/(float)total_identify_num);
 }
 
 bool shd_warp_t::functional_done() const
