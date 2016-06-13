@@ -310,9 +310,9 @@ public:
     void     get_pdom_stack_top_info( unsigned *pc, unsigned *rpc ) const;
     unsigned get_rp() const;
     void     print(FILE*fp) const;
-    unsigned get_nInst() {
-	return m_warp_cawa_nInst;
-    }
+
+    /*TODO*/
+    unsigned get_nInst() {return m_warp_cawa_nInst;}
 
 protected:
     unsigned m_warp_id;

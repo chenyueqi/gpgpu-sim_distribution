@@ -771,7 +771,7 @@ void simt_stack::update( simt_mask_t &thread_done, addr_vector_t &next_pc, addre
             m_stack.back().m_calldepth = 0;
             m_stack.back().m_recvg_pc = new_recvg_pc;
 	    /*TODO*/
-	    m_warp_cawa_nInst += new_recvg_pc - tmp_next_pc;
+	    m_warp_cawa_nInst += (new_recvg_pc - tmp_next_pc);
         } else {
             m_stack.back().m_recvg_pc = top_recvg_pc;
         }

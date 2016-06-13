@@ -2913,7 +2913,9 @@ void shd_warp_t::update_cpi() {
 /*TODO*/
 void shd_warp_t::lastwords(unsigned cta_id, unsigned warp_id)
 {
-    printf("I am a warp #%d#%d#%d nCriticality:%d cycle number:%u identify frequency: %f\n",m_shader->get_sid(), cta_id, warp_id,  nCriticality, gpu_sim_cycle, (float)cawa_identify_num/(float)total_identify_num);
+    
+    printf("cawa: #%d#%d#%d nCriticality:%d cycle number:%u identify frequency: %f\n",m_shader->get_sid(), cta_id, warp_id,  nCriticality, gpu_sim_cycle, (float)cawa_identify_num/(float)total_identify_num);
+//    printf("cawa: %f\n", (float)cawa_identify_num/(float)total_identify_num);
 }
 
 bool shd_warp_t::functional_done() const
